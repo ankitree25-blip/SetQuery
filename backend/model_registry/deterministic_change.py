@@ -188,9 +188,13 @@ def _write_probability_raster(probability_array, reference_path: str) -> str:
             "driver": "GTiff", "height": ref.height, "width": ref.width, "count": 1,
             "dtype": "float32", "crs": ref.crs, "transform": ref.transform, "compress": "DEFLATE",
         }
-        image_id = ref.tags().get("SATQUERY_IMAGE_ID") or Path(reference_path).stem
+        path = Path(reference_path)
+        image_id = ref.tags().get("SATQUERY_IMAGE_ID")
+        if not image_id:
+            image_id = path.parent.parent.name if path.parent.name == "tiles" else path.parent.name
 
-    out_path = f"{store.stitched_dir_for(image_id)}/change_probability_{Path(reference_path).stem}.tif"
+    store.ensure_image_dirs(image_id)
+    out_path = f"{store.stitched_dir_for(image_id)}/change_probability_{path.stem}.tif"
     with rasterio.open(out_path, "w", **profile) as dst:
         dst.write(probability_array.astype("float32"), 1)
     return out_path

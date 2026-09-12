@@ -226,15 +226,7 @@ def _real_change_evidence(
         merged["probability_raster_path"] = raster_paths[0]
 
     change_map = ChangeMap(**merged)
-    answer = None
-    if query:
-        answer = (
-            f"Deterministic change-vector analysis found {merged['changed_area_pct']:.1f}% of the "
-            f"analyzed area changed — this identifies WHERE pixel values shifted significantly "
-            f"between the two images, not WHAT caused it (new construction, harvest, flooding, and "
-            f"seasonal variation can all look similar to this method). Answering '{query}' with a "
-            f"specific cause needs a trained model, which isn't loaded yet."
-        )
+    answer = _change_answer(query, merged)
 
     return Evidence(
         task=task, model_used=model_name, modality_used=modality_used, change_map=change_map,
@@ -245,6 +237,47 @@ def _real_change_evidence(
             basis="Otsu threshold separation (between-class/total variance ratio) on this image pair's own change-magnitude histogram — a statistical separation proxy, not a calibrated probability",
         ),
         warnings=computation_warnings,
+    )
+
+
+def _change_answer(query: Optional[str], merged: dict) -> str:
+    """Answer change questions from measured evidence without inventing causes."""
+    pct = merged["changed_area_pct"]
+    pixels = merged["changed_area_px"]
+    confidence = merged["mean_confidence"] * 100
+    current_query = (query or "").split("CURRENT USER QUESTION:")[-1].strip()
+    q = current_query.lower()
+
+    if any(word in q for word in ("why", "cause", "reason", "because")):
+        focus = (
+            "The pixel comparison cannot determine the cause. New construction, harvest, "
+            "flooding, cloud effects, or seasonal variation can produce similar changes."
+        )
+    elif any(word in q for word in ("where", "location", "area", "region")):
+        focus = (
+            "The change map shows the spatial distribution of the changed pixels. "
+            "A geographic place or feature label requires a trained semantic model."
+        )
+    elif any(word in q for word in ("road", "roads", "building", "buildings", "river", "water", "development")):
+        focus = (
+            "This pixel comparison cannot verify whether a specific feature such as roads, "
+            "buildings, rivers, or development changed. The heatmap shows pixel shifts; "
+            "feature-level identification requires a trained grounding or change-VQA model."
+        )
+    elif any(word in q for word in ("how much", "percentage", "percent", "extent", "amount")):
+        focus = f"The measured extent is {pct:.2f}% of the valid analyzed area ({pixels} pixels)."
+    elif any(word in q for word in ("deep", "detail", "analysis", "summary")):
+        focus = (
+            f"The measured extent is {pct:.2f}% of the valid analyzed area ({pixels} pixels), "
+            f"with an Otsu separation score of {confidence:.2f}%."
+        )
+    else:
+        focus = f"The measured extent is {pct:.2f}% of the valid analyzed area ({pixels} pixels)."
+
+    return (
+        f"{focus} This is deterministic pixel-change analysis: it identifies where pixel "
+        "values shifted between the images, not what caused the shift. "
+        f"The statistical separation score is {confidence:.2f}%, not a calibrated probability."
     )
 
 

@@ -40,12 +40,13 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import shutil
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 # --- environment / secrets --------------------------------------------------
 # Loads the repo-root .env (SATQUERY_GOOGLE_SEARCH_API_KEY, etc.) into
@@ -94,7 +95,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from shared.schemas import (
     AnalysisMode,
@@ -137,6 +138,7 @@ from backend.model_registry.inference import (
 )
 from backend.model_registry.inference import run_inference as _real_run_inference
 from backend.evidence.service import validate_and_respond as _real_validate_and_respond
+from backend.evidence.llm_client import LocalOpenAICompatibleLLMClient
 
 # Real Part 3 (Section 3.3) — wired in once it was uploaded. Also plain sync
 # functions (rasterio/GDAL calls), same asyncio.to_thread treatment as
@@ -190,6 +192,26 @@ upload_sessions = UploadSessionStore(CHUNK_DIR)
 # backend/model_registry's requirements installed.
 _configure_inference_engine(use_mock=True)
 
+_llm_client = None
+_llm_base_url = os.environ.get("SATQUERY_LLM_BASE_URL", "http://localhost:11434/v1")
+_llm_host = "localhost"
+try:
+    _llm_host = _llm_base_url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    with socket.create_connection((_llm_host, 11434), timeout=0.2):
+        _llm_client = LocalOpenAICompatibleLLMClient(
+            base_url=_llm_base_url,
+            model=os.environ.get("SATQUERY_LLM_MODEL", "gemma4:latest"),
+            timeout_s=float(os.environ.get("SATQUERY_LLM_TIMEOUT_SECONDS", "15")),
+        )
+except OSError:
+    pass
+if os.environ.get("SATQUERY_LLM_BASE_URL") and _llm_client is None:
+    _llm_client = LocalOpenAICompatibleLLMClient(
+        base_url=_llm_base_url,
+        model=os.environ.get("SATQUERY_LLM_MODEL", "gemma4:latest"),
+        timeout_s=float(os.environ.get("SATQUERY_LLM_TIMEOUT_SECONDS", "15")),
+    )
+
 
 def _safe_upload_name(filename: str | None) -> str:
     """Keep uploaded bytes inside the configured storage directory."""
@@ -209,7 +231,7 @@ async def _run_inference_async(task, tiles, model_hint=None, **kwargs):
 
 
 async def _validate_and_respond_async(query, evidence):
-    return await asyncio.to_thread(_real_validate_and_respond, query, evidence)
+    return await asyncio.to_thread(_real_validate_and_respond, query, evidence, _llm_client)
 
 
 async def _list_available_models_async():
@@ -260,11 +282,31 @@ _funcs = Part345Functions(
 job_queue = JobQueue(funcs=_funcs, max_concurrent_inference=1, web_search_fn=_web_search_fn)
 
 
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class QueryRequest(BaseModel):
     query: str
     image_ids: list[str]
     web_search: bool = False  # NEW (Section 4) -- off by default; see README before enabling
     mode: AnalysisMode = AnalysisMode.DEEP  # NEW (Section 3) -- DEEP reproduces pre-mode behavior
+    conversation_history: list[ConversationTurn] = Field(default_factory=list)
+
+
+def _build_execution_query(query: str, history: list[ConversationTurn]) -> str:
+    """Keep the public query unchanged while giving follow-up turns context."""
+    recent = history[-8:]
+    if not recent:
+        return query
+    context = "\n".join(
+        f"{turn.role.upper()}: {turn.content.strip()}" for turn in recent
+    )
+    return (
+        "Conversation context from earlier turns:\n"
+        f"{context}\n\nCURRENT USER QUESTION: {query.strip()}"
+    )
 
 
 @app.post("/api/upload")
@@ -328,7 +370,11 @@ async def submit_query(payload: QueryRequest):
         images.append(img)
 
     job_id = job_queue.submit(
-        payload.query, images, web_search_enabled=payload.web_search, mode=payload.mode
+        payload.query,
+        images,
+        web_search_enabled=payload.web_search,
+        mode=payload.mode,
+        execution_query=_build_execution_query(payload.query, payload.conversation_history),
     )
     return {"job_id": job_id}
 
@@ -405,6 +451,60 @@ async def get_image_thumbnail(image_id: str, max_dim: int = 512):
     except Exception as exc:
         raise HTTPException(422, f"couldn't generate a thumbnail for this image: {exc}")
     return FileResponse(path, media_type="image/png")
+
+
+def _change_map_png(raster_path: str, output_path: str, max_dim: int = 1024) -> str:
+    """Render the computed probability raster as a browser-safe PNG."""
+    import numpy as np
+    import rasterio
+    from PIL import Image
+
+    with rasterio.open(raster_path) as src:
+        scale = min(1.0, max_dim / max(src.width, src.height))
+        height = max(1, round(src.height * scale))
+        width = max(1, round(src.width * scale))
+        values = src.read(1, out_shape=(height, width), masked=True).filled(0.0)
+
+    values = np.nan_to_num(values.astype("float32"), nan=0.0, posinf=1.0, neginf=0.0)
+    values = np.clip(values, 0.0, 1.0)
+    rgba = np.zeros((height, width, 4), dtype="uint8")
+    rgba[..., 0] = 255
+    rgba[..., 1] = np.clip(255.0 * (1.0 - values), 0, 255).astype("uint8")
+    rgba[..., 2] = np.clip(255.0 * (1.0 - values), 0, 255).astype("uint8")
+    rgba[..., 3] = np.clip(220.0 * values, 0, 220).astype("uint8")
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(rgba, mode="RGBA").save(output_path)
+    return output_path
+
+
+@app.get("/api/jobs/{job_id}/change-map")
+async def get_change_map(job_id: str):
+    """Serve the actual computed change-probability raster as a PNG overlay."""
+    record = job_queue.get(job_id)
+    if record is None:
+        raise HTTPException(404, "job not found")
+    if record.result is None or record.result.evidence.change_map is None:
+        raise HTTPException(404, "job has no change map")
+
+    raster_path = record.result.evidence.change_map.probability_raster_path
+    if not raster_path:
+        raise HTTPException(404, "change map raster is unavailable")
+    source = Path(raster_path).resolve()
+    data_root = Path(_preprocessing_config.DATA_DIR).resolve()
+    try:
+        source.relative_to(data_root)
+    except ValueError:
+        raise HTTPException(403, "change map path is outside the analysis store")
+    if not source.is_file():
+        raise HTTPException(404, "change map raster file is missing")
+
+    png_path = REPORTS_DIR / f"{job_id}-change-map.png"
+    try:
+        if not png_path.exists() or png_path.stat().st_mtime < source.stat().st_mtime:
+            await asyncio.to_thread(_change_map_png, str(source), str(png_path))
+    except Exception as exc:
+        raise HTTPException(422, f"couldn't render change map: {exc}")
+    return FileResponse(str(png_path), media_type="image/png")
 
 
 @app.get("/api/models")

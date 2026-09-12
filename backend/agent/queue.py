@@ -70,10 +70,13 @@ class JobQueue:
         images: list[ImageMetadata],
         web_search_enabled: bool = False,
         mode: AnalysisMode = AnalysisMode.DEEP,
+        execution_query: Optional[str] = None,
     ) -> str:
         job_id = str(uuid.uuid4())
         self._jobs[job_id] = JobRecord(job_id=job_id, query=query)
-        task = asyncio.create_task(self._run(job_id, query, images, web_search_enabled, mode))
+        task = asyncio.create_task(
+            self._run(job_id, execution_query or query, images, web_search_enabled, mode)
+        )
         self._tasks[job_id] = task
         self._background_tasks.add(task)
         task.add_done_callback(lambda t, jid=job_id: self._on_task_done(jid, t))

@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from backend.model_registry.mock_registry import MockInferenceEngine
+from backend.model_registry.mock_registry import MockInferenceEngine, _change_answer
 from backend.shared.schemas import Evidence, Modality, TaskType
 
 MANDATORY_TASKS = [
@@ -56,6 +56,32 @@ def test_change_detection_fixture_has_change_map(before_after_tiles):
     assert evidence.change_map is None
     assert evidence.confidence.value is None
     assert any("does not exist" in warning for warning in evidence.warnings)
+
+
+def test_change_vqa_answers_follow_question_focus():
+    evidence = {"changed_area_pct": 8.5, "changed_area_px": 1200, "mean_confidence": 0.7}
+    deep = _change_answer("give a deep analysis", evidence)
+    extent = _change_answer("how much area changed?", evidence)
+    cause = _change_answer("why did it change?", evidence)
+    roads = _change_answer("changes in roads", evidence)
+
+    assert deep != extent
+    assert extent != cause
+    assert roads != extent
+    assert "cause" in cause.lower()
+    assert "calibrated probability" in cause.lower()
+    assert "specific feature" in roads.lower()
+
+
+def test_change_answer_uses_current_question_after_chat_context():
+    evidence = {"changed_area_pct": 8.5, "changed_area_px": 1200, "mean_confidence": 0.7}
+    answer = _change_answer(
+        "Conversation context from earlier turns:\nUSER: why did it change?\n"
+        "ASSISTANT: cause is uncertain\n\nCURRENT USER QUESTION: how much changed?",
+        evidence,
+    )
+    assert "measured extent" in answer.lower()
+    assert "cannot determine the cause" not in answer.lower()
 
 
 def test_vqa_fixtures_have_answer_text(single_tile):

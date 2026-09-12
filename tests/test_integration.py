@@ -72,6 +72,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from backend.shared.schemas import Modality, TaskType, Evidence, Detection, Confidence
 from backend.preprocessing import validate_and_prepare, tile_image, check_coregistration, stitch_detections
 from backend.preprocessing import config
+from backend.model_registry.deterministic_change import detect_change
 
 FIXTURE_DIR = os.path.join(os.path.dirname(__file__), "..", "test-data")
 
@@ -266,6 +267,18 @@ def test_check_coregistration_identical_image_against_itself_is_aligned():
     result = check_coregistration(meta.image_id, meta.image_id)
     assert result.aligned is True
     assert result.offset_px < config.COREG_NEGLIGIBLE_OFFSET_PX + 0.5
+
+
+def test_change_detection_writes_probability_raster_for_tiled_inputs():
+    before = validate_and_prepare(_fixture("bitemporal_before.tif"), Modality.OPTICAL, None)
+    after = validate_and_prepare(_fixture("bitemporal_after_small.tif"), Modality.OPTICAL, None)
+    before_tiles = tile_image(before.image_id, TaskType.CHANGE_DETECTION, tile_size=1024, overlap_pct=0.15)
+    after_tiles = tile_image(after.image_id, TaskType.CHANGE_DETECTION, tile_size=1024, overlap_pct=0.15)
+
+    result = detect_change(before_tiles[0].array_path, after_tiles[0].array_path)
+
+    assert result["probability_raster_path"] is not None
+    assert os.path.exists(result["probability_raster_path"])
 
 
 # ============================================================================

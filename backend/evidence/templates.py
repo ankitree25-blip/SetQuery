@@ -20,9 +20,7 @@ _TEMPLATES: dict[TaskType, str] = {
         "Found {detection_count_phrase} for '{detection_labels}', with "
         "detection confidence {detection_confidence_phrase}.",
     TaskType.CHANGE_DETECTION:
-        "{changed_area_pct}% of the analyzed area ({changed_area_px} pixels) "
-        "shows change between the two images, at a mean confidence of "
-        "{change_mean_confidence}%.",
+        "{change_answer}",
     TaskType.CHANGE_VQA:
         "{vqa_answer} ({changed_area_pct}% of the area changed, mean "
         "confidence {change_mean_confidence}%.)",
@@ -41,6 +39,14 @@ def render_template(evidence: Evidence, ctx: GroundingContext) -> str:
         "vqa_answer",
         (evidence.vqa_answer_raw or "").strip() or "No description was returned.",
     )
+    if evidence.task == TaskType.CHANGE_DETECTION and not evidence.vqa_answer_raw:
+        format_dict["change_answer"] = (
+            "{changed_area_pct}% of the analyzed area ({changed_area_px} pixels) "
+            "shows change between the two images, at a mean confidence of "
+            "{change_mean_confidence}%."
+        ).format(**format_dict)
+    else:
+        format_dict["change_answer"] = format_dict["vqa_answer"]
 
     try:
         text = template.format(**format_dict)

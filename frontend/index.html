@@ -179,6 +179,10 @@
   .badge-med  { background: var(--med-bg);  color: var(--med); }
   .badge-low  { background: var(--low-bg);  color: var(--low); }
   .answer-text { margin: 10px 0; font-size: 14px; max-width: 60ch; }
+  .chat-transcript { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px; }
+  .chat-message { padding: 8px 10px; border-radius: 5px; font-size: 13px; white-space: pre-wrap; }
+  .chat-message.user { align-self: flex-end; max-width: 82%; background: var(--accent-soft); color: var(--ink); }
+  .chat-message.assistant { align-self: flex-start; max-width: 92%; background: #f3f1ec; color: var(--ink); }
   .toggle-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
   .toggle-btn {
     font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 4px;
@@ -200,6 +204,7 @@
     font-size: 10px; padding: 1px 5px; border-radius: 3px; white-space: nowrap;
   }
   .change-overlay { position: absolute; inset: 0; background: rgba(47,95,134,0.28); pointer-events: none; }
+  .change-map-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
   .trace-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
   .trace-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; color: var(--ink-muted); }
   .trace-list li.done { color: var(--ink); }
@@ -336,6 +341,7 @@
 
       <section class="panel" id="resultsPanel" style="display:none;">
         <h2>Result</h2>
+        <div id="chatTranscript" class="chat-transcript"></div>
         <div id="confidenceBadge"></div>
         <p class="answer-text" id="answerText"></p>
 
@@ -395,7 +401,10 @@ const state = {
   currentBeforeAfter: 'A',
   lastResult: null,
   lastTrace: null,
-  lastQueryImageCount: 0
+  lastQueryImageCount: 0,
+  chatMessages: [],
+  pendingQuery: null,
+  pollGeneration: 0
 };
 let slotCounter = 0;
 
@@ -420,10 +429,16 @@ async function apiUpload(file, modality, timestamp) {
   return await res.json(); // server is authoritative for width/height — it actually parsed the file
 }
 
-async function apiQuery(query, imageIds, webSearch, mode) {
+async function apiQuery(query, imageIds, webSearch, mode, conversationHistory) {
   const res = await fetch(CONFIG.BASE_URL + '/api/query', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, image_ids: imageIds, web_search: !!webSearch, mode: mode || 'DEEP' })
+    body: JSON.stringify({
+      query,
+      image_ids: imageIds,
+      web_search: !!webSearch,
+      mode: mode || 'DEEP',
+      conversation_history: conversationHistory || []
+    })
   });
   if (!res.ok) throw new Error('Query failed (' + res.status + ')');
   return await res.json();
@@ -590,6 +605,7 @@ function resetAnalyzeUI() {
 // section below, since that state is intentionally kept in its own closure).
 function resetImagesAndQueryUI() {
   clearTimeout(state.pollTimer);
+  state.pollGeneration += 1;
 
   document.getElementById('imageSlots').innerHTML = '';
   state.slots = {};
@@ -607,6 +623,8 @@ function resetImagesAndQueryUI() {
   state.lastResult = null;
   state.lastTrace = null;
   state.lastQueryImageCount = 0;
+  state.chatMessages = [];
+  state.pendingQuery = null;
   updateAnalyzeButtonState();
 }
 
@@ -628,10 +646,12 @@ async function handleAnalyze() {
   try {
     const webSearch = document.getElementById('webSearchToggle').checked;
     const mode = document.getElementById('modeSelect').value;
-    const { job_id } = await apiQuery(query, imageIds, webSearch, mode);
+    state.pendingQuery = query;
+    const { job_id } = await apiQuery(query, imageIds, webSearch, mode, state.chatMessages);
     state.currentJobId = job_id;
     pollJob(job_id);
   } catch (err) {
+    state.pendingQuery = null;
     showError(err.message || 'Could not submit the query. Check the connection and try again.');
     resetAnalyzeUI();
   }
@@ -658,9 +678,11 @@ async function handleStop() {
 
 function pollJob(job_id) {
   clearTimeout(state.pollTimer);
+  const generation = ++state.pollGeneration;
   const tick = async () => {
     try {
       const jobState = await apiGetJob(job_id);
+      if (generation !== state.pollGeneration) return;
       if (jobState.status === 'failed') {
         showError(jobState.error || 'The analysis failed.');
         resetAnalyzeUI();
@@ -677,7 +699,14 @@ function pollJob(job_id) {
 
       if (jobState.status === 'done') {
         resetAnalyzeUI();
+        if (state.pendingQuery) {
+          state.chatMessages.push({ role: 'user', content: state.pendingQuery });
+          state.chatMessages.push({ role: 'assistant', content: jobState.result.answer_text });
+          state.pendingQuery = null;
+        }
         renderResults(jobState.result);
+        document.getElementById('queryInput').value = '';
+        updateAnalyzeButtonState();
         const trace = await apiGetTrace(job_id);
         state.lastTrace = trace;
         renderTrace(trace);
@@ -730,7 +759,14 @@ function renderImageAndOverlay() {
   if (!result || state.currentOverlay === 'none') return;
 
   if (state.currentOverlay === 'boxes') {
-    (result.evidence.detections || []).forEach(d => {
+    const detections = result.evidence.detections || [];
+    if (!detections.length) {
+      const notice = document.createElement('div');
+      notice.className = 'no-preview';
+      notice.textContent = 'Bounding boxes unavailable: no trained grounding model is loaded.';
+      container.appendChild(notice);
+    }
+    detections.forEach(d => {
       const x0 = d.box_px[0], y0 = d.box_px[1], x1 = d.box_px[2], y1 = d.box_px[3];
       const box = document.createElement('div');
       box.className = 'box-overlay';
@@ -745,9 +781,18 @@ function renderImageAndOverlay() {
       container.appendChild(box);
     });
   } else if (state.currentOverlay === 'change' && result.evidence.change_map) {
-    const overlay = document.createElement('div');
-    overlay.className = 'change-overlay';
-    container.appendChild(overlay);
+    const map = document.createElement('img');
+    map.className = 'change-map-image';
+    map.alt = 'Computed change probability map';
+    map.src = CONFIG.BASE_URL + '/api/jobs/' + encodeURIComponent(state.currentJobId) + '/change-map';
+    map.onerror = () => {
+      map.remove();
+      const notice = document.createElement('div');
+      notice.className = 'no-preview';
+      notice.textContent = 'The computed change raster is unavailable for this result.';
+      container.appendChild(notice);
+    };
+    container.appendChild(map);
   }
 }
 
@@ -760,6 +805,7 @@ function renderResults(result) {
 
   document.getElementById('resultsPanel').style.display = 'block';
   document.getElementById('answerText').textContent = result.answer_text;
+  renderChatTranscript();
 
   const band = result.confidence.band;
   const badgeClass = band === 'HIGH' ? 'badge-high' : band === 'MEDIUM' ? 'badge-med' : 'badge-low';
@@ -792,11 +838,22 @@ function renderResults(result) {
   renderImageAndOverlay();
 }
 
+function renderChatTranscript() {
+  const transcript = document.getElementById('chatTranscript');
+  transcript.innerHTML = '';
+  for (const message of state.chatMessages) {
+    const item = document.createElement('div');
+    item.className = 'chat-message ' + message.role;
+    item.textContent = message.content;
+    transcript.appendChild(item);
+  }
+}
+
 function renderTrace(trace) {
   const list = document.getElementById('traceList');
   list.innerHTML = trace.steps.map(s =>
-    '<li class="' + (s.status === 'done' ? 'done' : '') + '"><span class="trace-dot"></span>' + s.stage +
-    '<span class="trace-time">' + (s.status === 'done' ? s.duration_ms + 'ms' : '...') + '</span></li>'
+    '<li class="' + (s.status === 'success' ? 'done' : '') + '"><span class="trace-dot"></span>' + s.stage +
+    '<span class="trace-time">' + (s.status === 'success' ? s.duration_ms + 'ms' : '...') + '</span></li>'
   ).join('');
 }
 
