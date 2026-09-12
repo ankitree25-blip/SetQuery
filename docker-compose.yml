@@ -1,0 +1,76 @@
+# SatQuery AI — architecture.md Section 5 step 5 ("Bring the whole thing up
+# with one docker-compose up") / Section 6 ("Local-first, Docker-based
+# deployment").
+#
+#   docker-compose up --build
+#
+# then open http://localhost:5500 (frontend) — it talks to the backend at
+# http://localhost:8000 (backend/api/main.py's CORS is already wide open
+# for this: allow_origins=["*"], see its own comment on why).
+#
+# Two services, not the microservices architecture.md Section 7 explicitly
+# rules out: `backend` is the one real Python process (Parts 2-5 as a
+# modular monolith, exactly as specced); `frontend` is nothing but a
+# static file server for Part 1's plain HTML/CSS/JS, split into its own
+# tiny container only so `docker-compose up` is genuinely one command
+# start to finish instead of "run this, then also separately open a local
+# file" — it could just as easily be opened directly from disk with zero
+# functional difference, since it only ever talks to `backend` over HTTP.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Uploaded images/projects, and any real checkpoint dropped in later
+      # (see root README.md's "Attaching a trained checkpoint later") all
+      # persist across `docker-compose down` / rebuilds instead of living
+      # only inside the container's writable layer.
+      - satquery-data:/app/backend/data
+      - ./checkpoints:/app/backend/checkpoints
+    env_file:
+      # Optional on purpose (Compose 2.24+ syntax) -- the app runs fine
+      # with none of these set (mock inference doesn't need a checkpoint
+      # path override, and Section 17's web search degrades to "search
+      # unavailable" rather than failing the request when no API key is
+      # configured, see backend/search/google_search.py). Copy
+      # .env.example to .env and fill in real values to turn features like
+      # web search on.
+      - path: .env
+        required: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # GPU passthrough for real (non-mock) inference once a checkpoint is
+    # attached: uncomment on a host with nvidia-container-toolkit
+    # installed. Left off by default so `docker-compose up` also works
+    # on a plain CPU host running in mock mode (backend/api/main.py's
+    # configure_engine(use_mock=True) default) with zero extra setup.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  frontend:
+    image: python:3.12-slim-bookworm
+    working_dir: /site
+    volumes:
+      - ./frontend:/site:ro
+    ports:
+      - "5500:5500"
+    command: ["python", "-m", "http.server", "5500"]
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  satquery-data:

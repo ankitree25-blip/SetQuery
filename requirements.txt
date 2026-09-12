@@ -1,0 +1,66 @@
+# SatQuery AI — every dependency, consolidated into one file during the
+# merge (backend/ and Part 3's preprocessing/ each shipped their own
+# requirements.txt independently; this replaces both).
+#
+#     pip install -r requirements.txt
+#
+# is now the one command for the whole system — serving and preprocessing.
+# Sectioned below so it stays readable about which part needs what.
+#
+# Training is deliberately not part of this repo (by request) — the model
+# gets fine-tuned separately, and only the resulting checkpoint (a PEFT
+# adapter directory + checkpoint_metadata.json) comes back here; see
+# README.md's "Attaching a trained checkpoint later" and
+# backend/model_registry/README.md's "Switching from mock to real".
+
+# --- Backend core: API + agent (Part 2) -------------------------------------
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32
+python-multipart>=0.0.12   # required by FastAPI for Form(...) / File(...) parsing
+python-dotenv>=1.0         # loads repo-root .env (search API keys, etc.) — see backend/api/main.py
+
+# --- Multi-file project uploads (Section 2/5 addition) ----------------------
+# Satellite images (.tif/.tiff) still go through Part 3 (rasterio, below) --
+# these four back the *other* file categories backend/files/extractors.py
+# now handles for real: pillow (already required by Part 3) covers photos.
+pandas>=2.2               # tabular: CSV/XLSX/Parquet row/column/summary-stat extraction
+openpyxl>=3.1              # pandas' engine for reading .xlsx
+pyarrow>=15.0               # pandas' engine for reading .parquet
+pypdf>=4.0                 # PDF page count + text preview
+python-docx>=1.1           # DOCX paragraph count + text preview
+reportlab>=4.0              # Section 15/16: PDF report generation
+fiona>=1.9,<2.0             # KML/KMZ/Shapefile vector metadata (GDAL/OGR under the hood --
+                             # already an implicit dependency via rasterio below, so this
+                             # doesn't add a new native-library requirement, just a new
+                             # Python binding to it)
+netCDF4>=1.6                # .nc metadata (dimensions/variables/attributes)
+h5py>=3.10                  # .hdf/.h5 metadata (datasets/attributes) -- HDF5 only, not classic HDF4
+
+# --- Shared across every part (Section 4 schemas, model registry config) ---
+pydantic>=2.9,<3.0
+pyyaml>=6.0
+
+# --- Preprocessing & geospatial (Part 3) ------------------------------------
+rasterio>=1.3,<2.0
+numpy>=1.24
+scipy>=1.10
+scikit-image>=0.21
+pillow>=10.0
+
+# --- Model registry & inference (Part 4) ------------------------------------
+# Only exercised once backend/api/main.py's configure_engine(use_mock=False)
+# is set (see backend/model_registry/README.md) — until then the app runs
+# fully on Part 4's mock engine and none of this is imported. Kept installed
+# by default so attaching a real checkpoint later (see README.md) is a config
+# change, not a reinstall.
+torch>=2.2
+transformers>=4.47      # PaliGemma 2 support line; also fine for PaliGemma 1
+peft>=0.11
+bitsandbytes>=0.43       # QLoRA's 4-bit loading; needs a CUDA GPU
+accelerate>=0.30        # also needed for bitsandbytes' device_map at inference time, not just training
+
+# --- Dev / test --------------------------------------------------------------
+pytest>=8.3
+pytest-asyncio>=0.24
+httpx>=0.27               # TestClient/AsyncClient-based HTTP-layer tests, and now also
+                          # backend/search/google_search.py's real Custom Search API call

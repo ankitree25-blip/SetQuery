@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SatQuery AI</title>
+<style>
+  :root {
+    --bg: #f5f4f1;
+    --sidebar-bg: #edeae2;
+    --panel: #ffffff;
+    --border: #dcd8cf;
+    --ink: #1c2430;
+    --ink-muted: #666b74;
+    --accent: #2f5f86;
+    --accent-dark: #23486a;
+    --accent-soft: #e6edf3;
+    --high: #3f7a52;
+    --high-bg: #e9f1eb;
+    --med: #93641f;
+    --med-bg: #f5efe1;
+    --low: #8a3a33;
+    --low-bg: #f5e9e7;
+    --radius: 6px;
+    --sidebar-w: 268px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.45;
+  }
+
+  /* ---- App shell: persistent sidebar + main workspace ---- */
+  .shell { display: flex; height: 100vh; overflow: hidden; }
+
+  .sidebar {
+    width: var(--sidebar-w); flex-shrink: 0; background: var(--sidebar-bg);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    padding: 14px 10px 10px; overflow-y: auto;
+  }
+  .sidebar-brand { display: flex; align-items: center; gap: 8px; padding: 2px 6px 16px; }
+  .sidebar-brand .logo-mark {
+    width: 24px; height: 24px; border-radius: 6px; background: var(--accent);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; flex-shrink: 0; letter-spacing: 0.02em;
+  }
+  .sidebar-brand strong { font-size: 14px; font-weight: 600; }
+
+  .new-analysis-btn {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    font: inherit; font-size: 13px; font-weight: 600; padding: 9px 10px; margin-bottom: 18px;
+    border-radius: var(--radius); border: 1px solid var(--border); background: #fff;
+    color: var(--ink); cursor: pointer;
+  }
+  .new-analysis-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .sidebar-section-label {
+    font-size: 11.5px; font-weight: 600; color: var(--ink-muted);
+    padding: 0 6px; margin: 2px 0 6px;
+  }
+
+  .new-project-form { display: flex; gap: 6px; padding: 0 2px 8px; }
+  .new-project-form input {
+    flex: 1; min-width: 0; font-size: 12.5px; padding: 6px 8px;
+  }
+  .new-project-form button {
+    font: inherit; font-size: 16px; line-height: 1; width: 28px; flex-shrink: 0;
+    border-radius: 4px; border: 1px solid var(--accent); background: var(--accent);
+    color: #fff; cursor: pointer;
+  }
+  .new-project-form button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .project-list { list-style: none; margin: 0 0 8px; padding: 0; }
+  .project-empty-hint { font-size: 12px; color: var(--ink-muted); padding: 2px 6px 8px; }
+  .project-item {
+    position: relative; display: flex; align-items: center;
+    border-radius: var(--radius); margin-bottom: 1px;
+  }
+  .project-item:hover, .project-item.open-menu { background: #e1ddd1; }
+  .project-item.active { background: var(--accent-soft); }
+  .project-item.active .project-item-name { color: var(--accent-dark); font-weight: 600; }
+  .project-item-name {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    padding: 8px 4px 8px 10px; font-size: 13px; cursor: pointer; background: none; border: none;
+    text-align: left; font: inherit; color: var(--ink);
+  }
+  .project-item-rename-input { flex: 1; min-width: 0; font-size: 13px; padding: 6px 8px; margin: 3px 6px; }
+  .project-item-menu-btn {
+    flex-shrink: 0; width: 24px; height: 24px; margin-right: 6px; border-radius: 4px;
+    border: none; background: transparent; color: var(--ink-muted); cursor: pointer;
+    font-size: 15px; line-height: 1; opacity: 0;
+  }
+  .project-item:hover .project-item-menu-btn, .project-item.open-menu .project-item-menu-btn { opacity: 1; }
+  .project-item-menu-btn:hover { background: #d5cfc0; color: var(--ink); }
+
+  .project-menu-dropdown {
+    position: absolute; right: 4px; top: 30px; z-index: 20; min-width: 128px;
+    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 4px 14px rgba(20, 20, 15, 0.16); overflow: hidden;
+  }
+  .project-menu-dropdown button {
+    display: block; width: 100%; text-align: left; font: inherit; font-size: 13px;
+    padding: 8px 12px; border: none; background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .project-menu-dropdown button:hover { background: var(--accent-soft); }
+  .project-menu-dropdown button.danger { color: var(--low); }
+  .project-menu-dropdown button.danger:hover { background: var(--low-bg); }
+
+  .sidebar-footer { margin-top: auto; padding: 10px 6px 2px; border-top: 1px solid var(--border); }
+  .connection-pill { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); }
+  .connection-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+  .connection-dot.online { background: var(--high); }
+  .connection-dot.offline { background: var(--low); }
+  .capability-status { margin-top: 7px; font-size: 11px; line-height: 1.35; color: var(--ink-muted); }
+
+  .sidebar-toggle {
+    display: none; position: fixed; top: 12px; left: 12px; z-index: 30;
+    width: 34px; height: 34px; border-radius: 6px; border: 1px solid var(--border);
+    background: #fff; cursor: pointer; font-size: 15px; color: var(--ink);
+  }
+  .sidebar-backdrop { display: none; }
+
+  /* ---- Main workspace ---- */
+  .main { flex: 1; overflow-y: auto; min-width: 0; }
+  .main-inner { max-width: 760px; margin: 0 auto; padding: 22px 20px 60px; }
+
+  .topbar { margin-bottom: 18px; }
+  .topbar h1 { font-size: 19px; margin: 0 0 3px; font-weight: 600; }
+  .topbar p { margin: 0; color: var(--ink-muted); font-size: 13px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+  .panel h2 { font-size: 15px; font-weight: 600; color: var(--ink); margin: 0 0 10px; }
+  .panel h2 .h2-hint { font-weight: 400; color: var(--ink-muted); font-size: 12px; }
+  .image-slot { border: 1px dashed var(--border); border-radius: var(--radius); padding: 10px; margin-bottom: 10px; }
+  .image-slot-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .field label { font-size: 12px; color: var(--ink-muted); display: block; margin-bottom: 3px; }
+  input[type="file"], select, input[type="date"], input[type="text"] {
+    font: inherit; padding: 6px 8px; border: 1px solid var(--border);
+    border-radius: 4px; background: #fff; color: var(--ink);
+  }
+  input[type="text"] { width: 100%; }
+  .btn {
+    font: inherit; padding: 8px 14px; border-radius: 4px;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer;
+  }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn:not(:disabled):hover { background: var(--accent-dark); }
+  .btn-secondary { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+  .btn-secondary:not(:disabled):hover { background: #eef3f7; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .progress-bar { height: 6px; background: #e7e4dd; border-radius: 3px; overflow: hidden; margin-top: 8px; display: none; }
+  .progress-bar-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
+  .thumb { max-width: 100%; max-height: 140px; border-radius: 4px; display: block; margin-top: 8px; }
+  .file-placeholder {
+    background: #eeece6; border-radius: 4px; padding: 12px; font-size: 12px;
+    color: var(--ink-muted); margin-top: 8px;
+  }
+  .status-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-muted); margin-top: 10px; }
+  .spinner {
+    width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge-high { background: var(--high-bg); color: var(--high); }
+  .badge-med  { background: var(--med-bg);  color: var(--med); }
+  .badge-low  { background: var(--low-bg);  color: var(--low); }
+  .answer-text { margin: 10px 0; font-size: 14px; max-width: 60ch; }
+  .toggle-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .toggle-btn {
+    font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 4px;
+    border: 1px solid var(--border); background: #fff; cursor: pointer; color: var(--ink);
+  }
+  .toggle-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .image-display {
+    position: relative; width: 100%; max-width: 480px; aspect-ratio: 4 / 3;
+    background: #e7e4dd; border-radius: 4px; overflow: hidden; border: 1px solid var(--border);
+  }
+  .image-display img { width: 100%; height: 100%; object-fit: contain; background: #14161a; }
+  .no-preview {
+    display: flex; align-items: center; justify-content: center; height: 100%;
+    color: var(--ink-muted); font-size: 12px; text-align: center; padding: 12px;
+  }
+  .box-overlay { position: absolute; border: 2px solid #c9542f; background: rgba(201,84,47,0.12); pointer-events: none; }
+  .box-label {
+    position: absolute; top: -18px; left: -1px; background: #c9542f; color: #fff;
+    font-size: 10px; padding: 1px 5px; border-radius: 3px; white-space: nowrap;
+  }
+  .change-overlay { position: absolute; inset: 0; background: rgba(47,95,134,0.28); pointer-events: none; }
+  .trace-list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+  .trace-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; color: var(--ink-muted); }
+  .trace-list li.done { color: var(--ink); }
+  .trace-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+  .trace-list li.done .trace-dot { background: var(--high); }
+  .trace-time { margin-left: auto; font-size: 11px; }
+  .stats-list { font-size: 13px; color: var(--ink-muted); margin: 8px 0; }
+  .error-banner { background: var(--low-bg); color: var(--low); padding: 10px; border-radius: 4px; font-size: 13px; margin-top: 10px; }
+  .toolbar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  .project-files-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; display: block; overflow-x: auto; }
+  .project-files-table thead, .project-files-table tbody { display: table; width: 100%; table-layout: auto; }
+  .project-files-table th { text-align: left; font-size: 11px; color: var(--ink-muted); font-weight: 600; padding: 4px 6px 6px; border-bottom: 1px solid var(--border); }
+  .project-files-table td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .project-files-table tr:last-child td { border-bottom: none; }
+
+  @media (max-width: 880px) {
+    .sidebar {
+      position: fixed; top: 0; left: 0; height: 100vh; z-index: 25;
+      transform: translateX(-100%); transition: transform 0.2s ease;
+      box-shadow: 0 0 24px rgba(0,0,0,0.18);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-toggle { display: block; }
+    .sidebar-backdrop.open { display: block; position: fixed; inset: 0; background: rgba(20,20,15,0.35); z-index: 24; }
+    .main-inner { padding-top: 58px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Toggle sidebar">&#9776;</button>
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="logo-mark">SQ</span>
+      <strong>SatQuery AI</strong>
+    </div>
+
+    <button class="new-analysis-btn" id="newAnalysisBtn" type="button">+ New analysis</button>
+
+    <div class="sidebar-section-label">Projects</div>
+    <form class="new-project-form" id="newProjectForm">
+      <input type="text" id="newProjectNameInput" placeholder="New project name" maxlength="120">
+      <button type="submit" id="newProjectSubmitBtn" title="Create project" disabled>+</button>
+    </form>
+    <ul class="project-list" id="projectList"></ul>
+    <div class="project-empty-hint" id="projectEmptyHint" style="display:none;">No projects yet.</div>
+    <div id="sidebarErrorBanner" class="error-banner" style="display:none;"></div>
+
+    <div class="sidebar-footer">
+      <div class="connection-pill">
+        <span class="connection-dot" id="connectionDot"></span>
+        <span id="connectionText">Checking backend&hellip;</span>
+      </div>
+      <div class="capability-status" id="capabilityStatus"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="main-inner">
+      <div class="topbar">
+        <h1 id="workspaceTitle">New analysis</h1>
+        <p id="workspaceSubtitle">Upload imagery below, then ask a question about it.</p>
+      </div>
+
+      <section class="panel" id="projectFilesPanel" style="display:none;">
+        <h2>Project files <span class="h2-hint" id="projectFilesHint">(satellite images can be sent to Query below with no re-upload; other file types aren't used in analysis yet)</span></h2>
+
+        <div class="field" style="margin-bottom:8px;">
+          <label for="projectFileInput">Add files &mdash; any mix of .tif/.tiff, .geojson/.kml/.kmz, Shapefile (as a .zip), .csv/.xlsx/.parquet, .pdf, .docx, .txt, .md, .jpg, .png, .nc, .hdf/.h5</label>
+          <input type="file" id="projectFileInput" multiple>
+        </div>
+
+        <div id="modalityPickers"></div>
+
+        <div class="toolbar">
+          <button class="btn" id="uploadProjectFilesBtn" type="button" disabled>Upload files</button>
+        </div>
+
+        <div class="status-row" id="projectStatusRow" style="display:none;">
+          <div class="spinner"></div>
+          <span id="projectStatusText"></span>
+        </div>
+        <div id="projectErrorBanner" class="error-banner" style="display:none;"></div>
+
+        <table class="project-files-table" id="projectFilesTable" style="display:none;">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Type</th>
+              <th>Details</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="projectFilesBody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>Images</h2>
+        <div id="imageSlots"></div>
+        <button class="btn-secondary btn" id="addSlotBtn" type="button">Add a second image (for change detection)</button>
+      </section>
+
+      <section class="panel">
+        <h2>Query</h2>
+        <input type="text" id="queryInput" placeholder="e.g. Where are the buildings? / What changed between these two images?">
+        <div class="field" style="margin-top:8px;">
+          <label for="modeSelect">Analysis mode</label>
+          <select id="modeSelect">
+            <option value="FAST">&#9889; Fast &mdash; quick, no web search</option>
+            <option value="DEEP" selected>&#129504; Deep &mdash; searches the web only if the question needs it</option>
+            <option value="RESEARCH">&#128300; Research &mdash; always gathers web evidence when search is on</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;color:var(--ink-muted);">
+          <input type="checkbox" id="webSearchToggle" style="width:auto;">
+          &#127760; Allow web search when the question needs current/external info
+        </label>
+        <div class="toolbar">
+          <button class="btn" id="analyzeBtn" disabled type="button">Analyze</button>
+          <button class="btn-secondary btn" id="stopBtn" type="button" style="display:none;">Stop</button>
+        </div>
+        <div class="status-row" id="statusRow" style="display:none;">
+          <div class="spinner"></div>
+          <span id="statusText"></span>
+        </div>
+        <div id="errorBanner" class="error-banner" style="display:none;"></div>
+      </section>
+
+      <section class="panel" id="resultsPanel" style="display:none;">
+        <h2>Result</h2>
+        <div id="confidenceBadge"></div>
+        <p class="answer-text" id="answerText"></p>
+
+        <div id="beforeAfterToggle" class="toggle-row" style="display:none;">
+          <button class="toggle-btn active" data-which="A" type="button">Before</button>
+          <button class="toggle-btn" data-which="B" type="button">After</button>
+        </div>
+
+        <div class="toggle-row" id="overlayToggle">
+          <button class="toggle-btn active" data-overlay="none" type="button">Image only</button>
+          <button class="toggle-btn" data-overlay="boxes" type="button">Boxes</button>
+          <button class="toggle-btn" data-overlay="change" type="button">Change map</button>
+        </div>
+
+        <div class="image-display" id="imageDisplay">
+          <div class="no-preview">Upload an image to see it here.</div>
+        </div>
+
+        <div id="statsList" class="stats-list"></div>
+        <div id="webSourcesList" style="margin-top:8px;font-size:13px;"></div>
+
+        <h2 style="margin-top:16px;">Execution trace</h2>
+        <ul class="trace-list" id="traceList"></ul>
+
+        <div class="toolbar">
+          <button class="btn-secondary btn" id="downloadBtn" type="button">Download report</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+
+<script>
+// ---------------------------------------------------------------------------
+// CONFIG — the Part 1-6 merge means Part 2 (and everything it wires to) now
+// exists for real, so this always talks to the real backend. The old
+// zero-backend client-side simulation (CONFIG.MODE = 'mock') has been
+// removed entirely -- it was the actual source of confusion this cleanup
+// was requested to fix: a leftover demo path made the app look like it
+// wasn't really doing anything, even once a real backend existed and ran
+// real (if sometimes buggy) analysis. One mode, no toggle.
+// ---------------------------------------------------------------------------
+const CONFIG = {
+  BASE_URL: 'http://localhost:8000'
+};
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const state = {
+  slots: {},        // slotId -> { meta, previewUrl } | { meta: null, previewUrl: null }
+  slotOrder: [],
+  currentJobId: null,
+  pollTimer: null,
+  currentOverlay: 'none',
+  currentBeforeAfter: 'A',
+  lastResult: null,
+  lastTrace: null,
+  lastQueryImageCount: 0
+};
+let slotCounter = 0;
+
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+function randId(prefix) { return prefix + '_' + Math.random().toString(36).slice(2, 10); }
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = String(s == null ? '' : s);
+  return div.innerHTML;
+}
+
+// ---------------------------------------------------------------------------
+// API layer — matches architecture.md Section 4.
+// ---------------------------------------------------------------------------
+async function apiUpload(file, modality, timestamp) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('modality', modality);
+  if (timestamp) form.append('timestamp', timestamp);
+  const res = await fetch(CONFIG.BASE_URL + '/api/upload', { method: 'POST', body: form });
+  if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
+  return await res.json(); // server is authoritative for width/height — it actually parsed the file
+}
+
+async function apiQuery(query, imageIds, webSearch, mode) {
+  const res = await fetch(CONFIG.BASE_URL + '/api/query', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, image_ids: imageIds, web_search: !!webSearch, mode: mode || 'DEEP' })
+  });
+  if (!res.ok) throw new Error('Query failed (' + res.status + ')');
+  return await res.json();
+}
+
+async function apiGetJob(job_id) {
+  const res = await fetch(CONFIG.BASE_URL + '/api/jobs/' + job_id);
+  if (!res.ok) throw new Error('Could not fetch job status (' + res.status + ')');
+  return await res.json();
+}
+
+async function apiGetTrace(job_id) {
+  const res = await fetch(CONFIG.BASE_URL + '/api/jobs/' + job_id + '/trace');
+  if (!res.ok) throw new Error('Could not fetch execution trace (' + res.status + ')');
+  return await res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Client-side preview — this is a browser capability, not a backend one, so it
+// runs the same in mock or real mode. GeoTIFF (and anything else a browser
+// can't inline-render) falls back to a dimensions-only placeholder rather than
+// faking a preview. A real GeoTIFF thumbnail needs a server-generated preview
+// image — that belongs in Part 2/3, it's not something Part 1 can solve alone.
+// ---------------------------------------------------------------------------
+function isBrowserRenderable(file) {
+  return /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name) ||
+    (file.type && file.type.startsWith('image/') && file.type !== 'image/tiff');
+}
+
+function getImageDimensions(file) {
+  return new Promise((resolve) => {
+    if (!isBrowserRenderable(file)) { resolve({ width: 1024, height: 768, previewUrl: null }); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight, previewUrl: url });
+    img.onerror = () => { URL.revokeObjectURL(url); resolve({ width: 1024, height: 768, previewUrl: null }); };
+    img.src = url;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Image slots
+// ---------------------------------------------------------------------------
+function createSlot() {
+  const slotId = 'slot' + (++slotCounter);
+  state.slots[slotId] = { meta: null, previewUrl: null };
+  state.slotOrder.push(slotId);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'image-slot';
+  wrap.id = slotId;
+  wrap.innerHTML =
+    '<div class="image-slot-row">' +
+      '<div class="field"><label>Image file</label>' +
+        '<input type="file" data-role="file" accept=".tif,.tiff,.png,.jpg,.jpeg"></div>' +
+      '<div class="field"><label>Modality</label>' +
+        '<select data-role="modality"><option value="OPTICAL" selected>Optical</option><option value="SAR">SAR</option></select></div>' +
+      '<div class="field"><label>Timestamp (optional)</label>' +
+        '<input type="date" data-role="timestamp"></div>' +
+      (state.slotOrder.length > 1 ? '<button type="button" class="btn-secondary btn" data-role="remove">Remove</button>' : '') +
+    '</div>' +
+    '<div class="progress-bar" data-role="progress"><div class="progress-bar-fill"></div></div>' +
+    '<div data-role="preview"></div>';
+  document.getElementById('imageSlots').appendChild(wrap);
+
+  wrap.querySelector('[data-role="file"]').addEventListener('change', (e) => handleFileSelected(slotId, e));
+  const removeBtn = wrap.querySelector('[data-role="remove"]');
+  if (removeBtn) removeBtn.addEventListener('click', () => removeSlot(slotId));
+
+  return slotId;
+}
+
+function removeSlot(slotId) {
+  const el = document.getElementById(slotId);
+  if (el) el.remove();
+  if (state.slots[slotId] && state.slots[slotId].previewUrl) {
+    URL.revokeObjectURL(state.slots[slotId].previewUrl);
+  }
+  delete state.slots[slotId];
+  state.slotOrder = state.slotOrder.filter(id => id !== slotId);
+  document.getElementById('addSlotBtn').style.display = state.slotOrder.length >= 2 ? 'none' : 'inline-block';
+  updateAnalyzeButtonState();
+}
+
+async function handleFileSelected(slotId, e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const wrap = document.getElementById(slotId);
+  const modality = wrap.querySelector('[data-role="modality"]').value;
+  const timestampRaw = wrap.querySelector('[data-role="timestamp"]').value;
+  const timestamp = timestampRaw ? new Date(timestampRaw).toISOString() : null;
+
+  const progressBar = wrap.querySelector('[data-role="progress"]');
+  const progressFill = progressBar.querySelector('.progress-bar-fill');
+  progressBar.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  const localPreview = await getImageDimensions(file);
+
+  try {
+    const meta = await apiUpload(file, modality, timestamp);
+    requestAnimationFrame(() => { progressFill.style.width = '100%'; });
+    if (state.slots[slotId] && state.slots[slotId].previewUrl) {
+      URL.revokeObjectURL(state.slots[slotId].previewUrl);
+    }
+    state.slots[slotId] = { meta, previewUrl: localPreview.previewUrl };
+    const previewEl = wrap.querySelector('[data-role="preview"]');
+    if (localPreview.previewUrl) {
+      previewEl.innerHTML = '<img class="thumb" src="' + localPreview.previewUrl + '">';
+    } else {
+      // Real server-generated thumbnail now exists (backend/preprocessing/
+      // thumbnail.py) -- browsers still can't render a GeoTIFF directly,
+      // but the backend already decoded it into a real PNG from the
+      // actual pixels, so fetch that instead of showing a placeholder.
+      previewEl.innerHTML = '<div class="file-placeholder">Rendering preview…</div>';
+      const thumbUrl = CONFIG.BASE_URL + '/api/images/' + encodeURIComponent(meta.image_id) + '/thumbnail';
+      const probe = new Image();
+      probe.onload = () => {
+        previewEl.innerHTML = '<img class="thumb" src="' + thumbUrl + '">';
+        if (state.slots[slotId]) state.slots[slotId].previewUrl = thumbUrl;  // so renderImageAndOverlay's Output panel picks it up too
+        if (state.lastResult) renderImageAndOverlay();  // already-visible results get the real image instead of staying on the old placeholder
+      };
+      probe.onerror = () => {
+        previewEl.innerHTML = '<div class="file-placeholder">' + file.name + ' uploaded (' + meta.width + '&times;' + meta.height +
+          'px). Thumbnail generation failed for this file.</div>';
+      };
+      probe.src = thumbUrl;
+    }
+    setTimeout(() => { progressBar.style.display = 'none'; }, 500);
+  } catch (err) {
+    if (localPreview.previewUrl) URL.revokeObjectURL(localPreview.previewUrl);
+    progressBar.style.display = 'none';
+    showError('Upload failed: ' + (err.message || 'unknown error'));
+  } finally {
+    updateAnalyzeButtonState();
+  }
+}
+
+function updateAnalyzeButtonState() {
+  const query = document.getElementById('queryInput').value.trim();
+  const hasImage = state.slotOrder.some(id => state.slots[id] && state.slots[id].meta);
+  document.getElementById('analyzeBtn').disabled = !(query && hasImage);
+}
+
+// ---------------------------------------------------------------------------
+// Analyze / poll / render
+// ---------------------------------------------------------------------------
+async function apiCancelJob(jobId) {
+  const res = await fetch(CONFIG.BASE_URL + '/api/jobs/' + jobId + '/cancel', { method: 'POST' });
+  if (!res.ok) throw new Error('Cancel failed (' + res.status + ')');
+  return await res.json();
+}
+
+function resetAnalyzeUI() {
+  document.getElementById('statusRow').style.display = 'none';
+  document.getElementById('analyzeBtn').disabled = false;
+  document.getElementById('stopBtn').style.display = 'none';
+}
+
+// New (UI redesign): backs the sidebar's "+ New analysis" button. Clears the
+// Images/Query/Result flow back to a single empty slot -- everything a fresh
+// ad-hoc analysis needs -- without touching Projects state (the click
+// handler that wires this also calls deselectProject(), see the Projects
+// section below, since that state is intentionally kept in its own closure).
+function resetImagesAndQueryUI() {
+  clearTimeout(state.pollTimer);
+
+  document.getElementById('imageSlots').innerHTML = '';
+  state.slots = {};
+  state.slotOrder = [];
+  slotCounter = 0;
+  createSlot();
+  document.getElementById('addSlotBtn').style.display = 'inline-block';
+
+  document.getElementById('queryInput').value = '';
+  document.getElementById('errorBanner').style.display = 'none';
+  document.getElementById('resultsPanel').style.display = 'none';
+  resetAnalyzeUI();
+
+  state.currentJobId = null;
+  state.lastResult = null;
+  state.lastTrace = null;
+  state.lastQueryImageCount = 0;
+  updateAnalyzeButtonState();
+}
+
+async function handleAnalyze() {
+  const query = document.getElementById('queryInput').value.trim();
+  const imageIds = state.slotOrder
+    .map(id => state.slots[id] && state.slots[id].meta && state.slots[id].meta.image_id)
+    .filter(Boolean);
+  if (!query || imageIds.length === 0) return;
+  state.lastQueryImageCount = imageIds.length;
+
+  document.getElementById('errorBanner').style.display = 'none';
+  document.getElementById('analyzeBtn').disabled = true;
+  document.getElementById('stopBtn').style.display = 'inline-block';
+  document.getElementById('statusRow').style.display = 'flex';
+  document.getElementById('statusText').textContent = 'Submitting...';
+  document.getElementById('resultsPanel').style.display = 'none';
+
+  try {
+    const webSearch = document.getElementById('webSearchToggle').checked;
+    const mode = document.getElementById('modeSelect').value;
+    const { job_id } = await apiQuery(query, imageIds, webSearch, mode);
+    state.currentJobId = job_id;
+    pollJob(job_id);
+  } catch (err) {
+    showError(err.message || 'Could not submit the query. Check the connection and try again.');
+    resetAnalyzeUI();
+  }
+}
+
+async function handleStop() {
+  const jobId = state.currentJobId;
+  if (!jobId) return;
+  document.getElementById('stopBtn').disabled = true;
+  try {
+    const { cancelled } = await apiCancelJob(jobId);
+    document.getElementById('statusText').textContent = cancelled ? 'Stopping...' : 'Already finishing...';
+    // Either way, keep polling -- pollJob's own 'cancelled' branch (below)
+    // is what actually resets the UI once the job record reflects it; a
+    // job that finished a moment before Stop was clicked (the "completes
+    // at the same time as stop" race from Section 14) just shows its
+    // normal result instead, which is the correct outcome, not a bug.
+  } catch (err) {
+    showError(err.message || 'Could not stop the job.');
+  } finally {
+    document.getElementById('stopBtn').disabled = false;
+  }
+}
+
+function pollJob(job_id) {
+  clearTimeout(state.pollTimer);
+  const tick = async () => {
+    try {
+      const jobState = await apiGetJob(job_id);
+      if (jobState.status === 'failed') {
+        showError(jobState.error || 'The analysis failed.');
+        resetAnalyzeUI();
+        return;
+      }
+      if (jobState.status === 'cancelled') {
+        document.getElementById('statusText').textContent = 'Cancelled.';
+        resetAnalyzeUI();
+        return;
+      }
+      const lastStage = jobState.progress[jobState.progress.length - 1];
+      document.getElementById('statusText').textContent =
+        jobState.status === 'queued' ? 'Queued...' : ('Running: ' + (lastStage || '...'));
+
+      if (jobState.status === 'done') {
+        resetAnalyzeUI();
+        renderResults(jobState.result);
+        const trace = await apiGetTrace(job_id);
+        state.lastTrace = trace;
+        renderTrace(trace);
+        return;
+      }
+      state.pollTimer = setTimeout(tick, 1200);
+    } catch (err) {
+      showError(err.message || 'Lost connection while checking job status.');
+      resetAnalyzeUI();
+    }
+  };
+  tick();
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function getSlotMeta(index) {
+  const slotId = state.slotOrder[index];
+  if (!slotId) return null;
+  return state.slots[slotId];
+}
+
+function renderImageAndOverlay() {
+  const container = document.getElementById('imageDisplay');
+  container.innerHTML = '';
+  const idx = state.currentBeforeAfter === 'A' ? 0 : 1;
+  let slot = getSlotMeta(idx);
+  if (!slot || !slot.meta) slot = getSlotMeta(0);
+  if (!slot || !slot.meta) {
+    container.innerHTML = '<div class="no-preview">Upload an image to see it here.</div>';
+    return;
+  }
+
+  if (slot.previewUrl) {
+    const img = document.createElement('img');
+    img.src = slot.previewUrl;
+    container.appendChild(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'no-preview';
+    ph.textContent = 'No inline preview for this file type (' + slot.meta.width + '\u00d7' + slot.meta.height + 'px).';
+    container.appendChild(ph);
+  }
+
+  const result = state.lastResult;
+  if (!result || state.currentOverlay === 'none') return;
+
+  if (state.currentOverlay === 'boxes') {
+    (result.evidence.detections || []).forEach(d => {
+      const x0 = d.box_px[0], y0 = d.box_px[1], x1 = d.box_px[2], y1 = d.box_px[3];
+      const box = document.createElement('div');
+      box.className = 'box-overlay';
+      box.style.left = (x0 / slot.meta.width * 100) + '%';
+      box.style.top = (y0 / slot.meta.height * 100) + '%';
+      box.style.width = ((x1 - x0) / slot.meta.width * 100) + '%';
+      box.style.height = ((y1 - y0) / slot.meta.height * 100) + '%';
+      const label = document.createElement('span');
+      label.className = 'box-label';
+      label.textContent = d.label + ' ' + Math.round(d.score * 100) + '%';
+      box.appendChild(label);
+      container.appendChild(box);
+    });
+  } else if (state.currentOverlay === 'change' && result.evidence.change_map) {
+    const overlay = document.createElement('div');
+    overlay.className = 'change-overlay';
+    container.appendChild(overlay);
+  }
+}
+
+function renderResults(result) {
+  state.lastResult = result;
+  state.currentOverlay = 'none';
+  state.currentBeforeAfter = 'A';
+  document.querySelectorAll('#overlayToggle .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.overlay === 'none'));
+  document.querySelectorAll('#beforeAfterToggle .toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.which === 'A'));
+
+  document.getElementById('resultsPanel').style.display = 'block';
+  document.getElementById('answerText').textContent = result.answer_text;
+
+  const band = result.confidence.band;
+  const badgeClass = band === 'HIGH' ? 'badge-high' : band === 'MEDIUM' ? 'badge-med' : 'badge-low';
+  const badge = document.getElementById('confidenceBadge');
+  badge.innerHTML = '<span class="badge ' + badgeClass + '">' + band + ' confidence</span>' +
+    (result.abstained ? ' <span style="color:var(--ink-muted);font-size:12px;">&mdash; ' + result.abstain_reason + '</span>' : '');
+
+  document.getElementById('beforeAfterToggle').style.display = state.lastQueryImageCount >= 2 ? 'flex' : 'none';
+
+  const statsEl = document.getElementById('statsList');
+  const stats = result.evidence.stats || {};
+  const statKeys = Object.keys(stats);
+  statsEl.innerHTML = statKeys.length
+    ? statKeys.map(k => '<div>' + k.replace(/_/g, ' ') + ': ' + (typeof stats[k] === 'number' ? stats[k].toFixed(1) : stats[k]) + '</div>').join('')
+    : '';
+
+  // Section 4/17: citations for whatever the planner's web-search stage
+  // found (empty when search was off, skipped by the heuristic, or failed
+  // -- a failure shows up in result.evidence.warnings instead).
+  const webSourcesEl = document.getElementById('webSourcesList');
+  const sources = result.evidence.web_sources || [];
+  webSourcesEl.innerHTML = sources.length ? (
+    '<div style="color:var(--ink-muted);margin-bottom:4px;">🌐 Web sources</div>' +
+    sources.map(s =>
+      '<div style="margin-bottom:4px;"><a href="' + escapeHtml(s.url) + '" target="_blank" rel="noopener">' +
+      escapeHtml(s.title || s.url) + '</a><div style="color:var(--ink-muted);">' + escapeHtml(s.snippet) + '</div></div>'
+    ).join('')
+  ) : '';
+
+  renderImageAndOverlay();
+}
+
+function renderTrace(trace) {
+  const list = document.getElementById('traceList');
+  list.innerHTML = trace.steps.map(s =>
+    '<li class="' + (s.status === 'done' ? 'done' : '') + '"><span class="trace-dot"></span>' + s.stage +
+    '<span class="trace-time">' + (s.status === 'done' ? s.duration_ms + 'ms' : '...') + '</span></li>'
+  ).join('');
+}
+
+// Section 15/16: this used to build a plain-text export of state.lastResult
+// client-side -- exactly the "merely export the chat transcript" the
+// upgrade brief said a real Save Report must move past. Now downloads the
+// real PDF from GET /api/jobs/{id}/report instead; the button and its
+// click wiring below are unchanged, only what happens on click is new.
+async function downloadReport() {
+  const jobId = state.currentJobId;
+  if (!jobId || !state.lastResult) return;
+  try {
+    const res = await fetch(CONFIG.BASE_URL + '/api/jobs/' + jobId + '/report');
+    if (!res.ok) throw new Error('Report generation failed (' + res.status + ')');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'satquery-report-' + jobId.slice(0, 8) + '.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showError(err.message || 'Could not generate the report.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+async function checkConnection() {
+  const dot = document.getElementById('connectionDot');
+  const text = document.getElementById('connectionText');
+  const capability = document.getElementById('capabilityStatus');
+  try {
+    const res = await fetch(CONFIG.BASE_URL + '/api/health');
+    if (!res.ok) throw new Error('unhealthy');
+    const health = await res.json();
+    dot.className = 'connection-dot online';
+    text.textContent = health.status === 'ok' ? 'Connected to backend' : 'Backend connected with limits';
+    const capabilities = health.capabilities || {};
+    const unavailable = Object.entries(capabilities)
+      .filter(([, status]) => status === 'MODEL_NOT_AVAILABLE')
+      .map(([task]) => task.replaceAll('_', ' ').toLowerCase());
+    const fallback = Object.entries(capabilities)
+      .filter(([, status]) => status === 'DETERMINISTIC_FALLBACK')
+      .map(([task]) => task.replaceAll('_', ' ').toLowerCase());
+    capability.textContent = unavailable.length
+      ? 'Unavailable: ' + unavailable.join(', ') + (fallback.length ? '. Fallback: ' + fallback.join(', ') + '.' : '.')
+      : '';
+  } catch (err) {
+    dot.className = 'connection-dot offline';
+    text.textContent = 'Backend not reachable at ' + CONFIG.BASE_URL;
+    capability.textContent = '';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  checkConnection();
+
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebarBackdrop').classList.toggle('open');
+  });
+  document.getElementById('sidebarBackdrop').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarBackdrop').classList.remove('open');
+  });
+
+  createSlot();
+
+  document.getElementById('addSlotBtn').addEventListener('click', () => {
+    if (state.slotOrder.length >= 2) return;
+    createSlot();
+    document.getElementById('addSlotBtn').style.display = 'none';
+  });
+
+  document.getElementById('queryInput').addEventListener('input', updateAnalyzeButtonState);
+  document.getElementById('queryInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !document.getElementById('analyzeBtn').disabled) handleAnalyze();
+  });
+  document.getElementById('analyzeBtn').addEventListener('click', handleAnalyze);
+  document.getElementById('stopBtn').addEventListener('click', handleStop);
+
+  document.querySelectorAll('#overlayToggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.currentOverlay = btn.dataset.overlay;
+      document.querySelectorAll('#overlayToggle .toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderImageAndOverlay();
+    });
+  });
+
+  document.querySelectorAll('#beforeAfterToggle .toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.currentBeforeAfter = btn.dataset.which;
+      document.querySelectorAll('#beforeAfterToggle .toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderImageAndOverlay();
+    });
+  });
+
+  document.getElementById('downloadBtn').addEventListener('click', downloadReport);
+});
+
+// ---------------------------------------------------------------------------
+// Projects (Section 2/5 addition; sidebar redesign on top of it). Independent
+// of the Images/Query/Result flow above: create/select a project in the
+// sidebar, upload mixed-format files into it, see them listed with real
+// extracted metadata. Kept as its own DOMContentLoaded listener (rather than
+// merged into the one above) so this can't disturb that flow's own init
+// order -- the "New analysis" button is the one thing that has to reach into
+// both, so it calls the other block's resetImagesAndQueryUI() (global) and
+// this block's own deselectProject() (local).
+// ---------------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+  const projectState = { currentId: null };
+
+  function isSatelliteFilename(name) {
+    const lower = name.toLowerCase();
+    return lower.endsWith('.tif') || lower.endsWith('.tiff');
+  }
+
+  async function apiListProjects() {
+    const res = await fetch(CONFIG.BASE_URL + '/api/projects');
+    if (!res.ok) throw new Error('Failed to list projects (' + res.status + ')');
+    return await res.json();
+  }
+
+  async function apiCreateProject(name) {
+    const res = await fetch(CONFIG.BASE_URL + '/api/projects', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    if (!res.ok) throw new Error('Failed to create project (' + res.status + ')');
+    return await res.json();
+  }
+
+  async function apiRenameProject(projectId, name) {
+    const res = await fetch(CONFIG.BASE_URL + '/api/projects/' + projectId, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    if (!res.ok) throw new Error('Rename failed (' + res.status + ')');
+    return await res.json();
+  }
+
+  async function apiDeleteProject(projectId) {
+    const res = await fetch(CONFIG.BASE_URL + '/api/projects/' + projectId, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Delete failed (' + res.status + ')');
+    return await res.json();
+  }
+
+  async function apiUploadProjectFiles(projectId, fileList, modalityMap) {
+    const form = new FormData();
+    for (const file of fileList) form.append('files', file);
+    form.append('modalities_json', JSON.stringify(modalityMap));
+    const res = await fetch(CONFIG.BASE_URL + '/api/projects/' + projectId + '/files', {
+      method: 'POST', body: form
+    });
+    if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
+    return await res.json();
+  }
+
+  function showSidebarError(msg) {
+    const el = document.getElementById('sidebarErrorBanner');
+    el.textContent = msg;
+    el.style.display = 'block';
+    clearTimeout(showSidebarError._t);
+    showSidebarError._t = setTimeout(() => { el.style.display = 'none'; }, 5000);
+  }
+
+  function updateWorkspaceHeader(project) {
+    const title = document.getElementById('workspaceTitle');
+    const subtitle = document.getElementById('workspaceSubtitle');
+    if (!project) {
+      title.textContent = 'New analysis';
+      subtitle.textContent = 'Upload imagery below, then ask a question about it.';
+      return;
+    }
+    title.textContent = project.name;
+    const n = project.files.length;
+    subtitle.textContent = n + ' file' + (n === 1 ? '' : 's') +
+      ' in this project \u2014 use "Use for query" below to analyze one, or add more above.';
+  }
+
+  function renderProjectFiles(project) {
+    const table = document.getElementById('projectFilesTable');
+    const body = document.getElementById('projectFilesBody');
+    body.innerHTML = '';
+    if (!project || project.files.length === 0) {
+      table.style.display = 'none';
+      return;
+    }
+    table.style.display = '';
+    for (const f of project.files) {
+      const tr = document.createElement('tr');
+      const detailBits = [];
+      const m = f.metadata || {};
+      if (f.category === 'TABULAR' && m.row_count !== undefined) {
+        detailBits.push(m.row_count + ' rows x ' + m.column_count + ' cols');
+      } else if (f.category === 'VECTOR' && m.feature_count !== undefined) {
+        detailBits.push(m.feature_count + ' feature(s): ' + (m.geometry_types || []).join(', '));
+      } else if (f.category === 'DOCUMENT' && m.page_count !== undefined) {
+        detailBits.push(m.page_count + ' page(s)');
+      } else if (f.category === 'DOCUMENT' && m.paragraph_count !== undefined) {
+        detailBits.push(m.paragraph_count + ' paragraph(s)');
+      } else if (f.category === 'PHOTO' && m.width !== undefined) {
+        detailBits.push(m.width + 'x' + m.height + ' ' + m.format);
+      } else if (f.category === 'SATELLITE_IMAGE' && m.width !== undefined) {
+        detailBits.push(m.width + 'x' + m.height + ', ' + m.band_count + ' band(s)');
+        // Bug fix (post-merge): cog.py can now flag an image that had no
+        // real geotransform/GCPs and had to run on a placeholder instead
+        // (see ImageMetadata.georeferenced) -- surface that here so it's
+        // never mistaken for a real position.
+        if (m.georeferenced === false) {
+          detailBits.push('no real-world coordinates (placeholder used)');
+        }
+      } else if (f.category === 'SCIENTIFIC_DATA' && m.format === 'NetCDF') {
+        detailBits.push(m.dimensions.length + ' dimension(s), ' + m.variable_count + ' variable(s)');
+        if (m.variables_truncated) detailBits.push('showing first ' + m.variables.length);
+      } else if (f.category === 'SCIENTIFIC_DATA' && m.format === 'HDF5') {
+        detailBits.push(m.dataset_count + ' dataset(s)');
+        if (m.datasets_truncated) detailBits.push('showing first ' + m.datasets.length);
+      }
+      if (f.warnings && f.warnings.length > 0) {
+        detailBits.push('\u26a0 ' + f.warnings.join('; '));
+      }
+      tr.innerHTML =
+        '<td>' + escapeHtml(f.filename) + '</td>' +
+        '<td>' + escapeHtml(f.category) + '</td>' +
+        '<td style="color:var(--ink-muted);">' + escapeHtml(detailBits.join(' — ')) + '</td>';
+
+      const actionTd = document.createElement('td');
+      if (f.category === 'SATELLITE_IMAGE' && f.image_id) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'toggle-btn';
+        btn.textContent = 'Use for query \u2192';
+        btn.addEventListener('click', () => useProjectFileInQuery(f));
+        actionTd.appendChild(btn);
+      }
+      tr.appendChild(actionTd);
+      body.appendChild(tr);
+    }
+  }
+
+  // Puts an already-uploaded project satellite image straight into an
+  // Images slot below (Section 1: "Do not force the user to re-upload
+  // files for every question") -- no /api/upload call here, since the
+  // full ImageMetadata this file was validated with is already sitting in
+  // f.metadata (set when it was first uploaded via
+  // POST /api/projects/{id}/files, and already registered in the same
+  // backend image_store /api/query reads from).
+  function useProjectFileInQuery(f) {
+    if (!f.image_id) return;
+
+    let slotId = state.slotOrder.find(id => !state.slots[id] || !state.slots[id].meta);
+    if (!slotId) {
+      if (state.slotOrder.length >= 2) {
+        showError('Both image slots are full — remove one in the Images panel below first.');
+        return;
+      }
+      slotId = createSlot();
+      document.getElementById('addSlotBtn').style.display = state.slotOrder.length >= 2 ? 'none' : 'inline-block';
+    }
+
+    const wrap = document.getElementById(slotId);
+    const meta = f.metadata;
+    state.slots[slotId] = { meta, previewUrl: null };
+
+    const previewEl = wrap.querySelector('[data-role="preview"]');
+    const thumbUrl = CONFIG.BASE_URL + '/api/images/' + encodeURIComponent(f.image_id) + '/thumbnail';
+    const probe = new Image();
+    probe.onload = () => {
+      previewEl.innerHTML = '<img class="thumb" src="' + thumbUrl + '"><div class="file-placeholder">Using "' +
+        escapeHtml(f.filename) + '" from the project. No re-upload needed.</div>';
+      if (state.slots[slotId]) state.slots[slotId].previewUrl = thumbUrl;
+      if (state.lastResult) renderImageAndOverlay();
+    };
+    probe.onerror = () => {
+      previewEl.innerHTML = '<div class="file-placeholder">Using "' + escapeHtml(f.filename) + '" from the project (' +
+        meta.width + '&times;' + meta.height + 'px). No re-upload needed.</div>';
+    };
+    probe.src = thumbUrl;
+    const modalitySelect = wrap.querySelector('[data-role="modality"]');
+    if (modalitySelect) modalitySelect.value = meta.modality;
+    const timestampInput = wrap.querySelector('[data-role="timestamp"]');
+    if (timestampInput && meta.timestamp) {
+      try { timestampInput.value = meta.timestamp.slice(0, 10); } catch (e) { /* leave blank */ }
+    }
+
+    updateAnalyzeButtonState();
+    document.getElementById('queryInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function renderModalityPickers() {
+    const input = document.getElementById('projectFileInput');
+    const container = document.getElementById('modalityPickers');
+    container.innerHTML = '';
+    const files = Array.from(input.files || []);
+    for (const f of files.filter(f => isSatelliteFilename(f.name))) {
+      const row = document.createElement('div');
+      row.className = 'field';
+      row.style.marginBottom = '6px';
+      row.innerHTML =
+        '<label>' + escapeHtml(f.name) + ' — modality</label>' +
+        '<select data-modality-for="' + escapeHtml(f.name) + '">' +
+        '<option value="OPTICAL">Optical</option><option value="SAR">SAR</option></select>';
+      container.appendChild(row);
+    }
+    document.getElementById('uploadProjectFilesBtn').disabled = files.length === 0;
+  }
+
+  // ---- Sidebar project list + per-project "..." menu ----
+
+  function closeAllProjectMenus() {
+    document.querySelectorAll('.project-menu-dropdown').forEach(el => el.remove());
+    document.querySelectorAll('#projectList .project-item.open-menu').forEach(el => el.classList.remove('open-menu'));
+  }
+
+  function toggleProjectMenu(project, li) {
+    const alreadyOpen = li.classList.contains('open-menu');
+    closeAllProjectMenus();
+    if (alreadyOpen) return;
+
+    li.classList.add('open-menu');
+    const menu = document.createElement('div');
+    menu.className = 'project-menu-dropdown';
+
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.textContent = 'Rename';
+    renameBtn.addEventListener('click', () => {
+      closeAllProjectMenus();
+      startRenameProject(project, li);
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'danger';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', () => {
+      closeAllProjectMenus();
+      handleDeleteProject(project);
+    });
+
+    menu.appendChild(renameBtn);
+    menu.appendChild(deleteBtn);
+    li.appendChild(menu);
+  }
+
+  function startRenameProject(project, li) {
+    const nameBtn = li.querySelector('.project-item-name');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'project-item-rename-input';
+    input.value = project.name;
+    li.replaceChild(input, nameBtn);
+    input.focus();
+    input.select();
+
+    let settled = false;
+    const commit = async () => {
+      if (settled) return;
+      settled = true;
+      const newName = input.value.trim();
+      if (newName && newName !== project.name) {
+        try {
+          await apiRenameProject(project.project_id, newName);
+        } catch (e) {
+          showSidebarError(e.message);
+        }
+      }
+      refreshProjects(projectState.currentId);
+    };
+    const cancel = () => { settled = true; refreshProjects(projectState.currentId); };
+
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+  }
+
+  async function handleDeleteProject(project) {
+    if (!confirm('Delete "' + project.name + '"? This also removes its uploaded files. This can\'t be undone.')) return;
+    try {
+      await apiDeleteProject(project.project_id);
+      if (projectState.currentId === project.project_id) deselectProject();
+      await refreshProjects(projectState.currentId);
+    } catch (e) {
+      showSidebarError(e.message);
+    }
+  }
+
+  function renderProjectList(projects) {
+    const list = document.getElementById('projectList');
+    const emptyHint = document.getElementById('projectEmptyHint');
+    list.innerHTML = '';
+    emptyHint.style.display = projects.length === 0 ? 'block' : 'none';
+
+    for (const p of projects) {
+      const li = document.createElement('li');
+      li.className = 'project-item' + (p.project_id === projectState.currentId ? ' active' : '');
+      li.dataset.projectId = p.project_id;
+
+      const nameBtn = document.createElement('button');
+      nameBtn.type = 'button';
+      nameBtn.className = 'project-item-name';
+      nameBtn.textContent = p.name;
+      nameBtn.title = p.name + ' (' + p.files.length + ' file' + (p.files.length === 1 ? '' : 's') + ')';
+      nameBtn.addEventListener('click', () => selectProject(p.project_id));
+
+      const menuBtn = document.createElement('button');
+      menuBtn.type = 'button';
+      menuBtn.className = 'project-item-menu-btn';
+      menuBtn.textContent = '\u22ee';
+      menuBtn.title = 'Project options';
+      menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleProjectMenu(p, li);
+      });
+
+      li.appendChild(nameBtn);
+      li.appendChild(menuBtn);
+      list.appendChild(li);
+    }
+  }
+
+  async function selectProject(projectId) {
+    try {
+      const projects = await apiListProjects();
+      const project = projects.find(p => p.project_id === projectId);
+      if (!project) { await refreshProjects(null); return; }
+      projectState.currentId = projectId;
+      renderProjectList(projects);
+      document.getElementById('projectFilesPanel').style.display = 'block';
+      updateWorkspaceHeader(project);
+      renderProjectFiles(project);
+    } catch (e) {
+      showSidebarError(e.message);
+    }
+  }
+
+  function deselectProject() {
+    projectState.currentId = null;
+    document.getElementById('projectFilesPanel').style.display = 'none';
+    document.querySelectorAll('#projectList .project-item').forEach(li => li.classList.remove('active'));
+    updateWorkspaceHeader(null);
+  }
+
+  async function refreshProjects(selectIdToKeep) {
+    let projects;
+    try {
+      projects = await apiListProjects();
+    } catch (e) {
+      showSidebarError('Could not reach backend for projects: ' + e.message);
+      return;
+    }
+    const keep = selectIdToKeep && projects.some(p => p.project_id === selectIdToKeep) ? selectIdToKeep : null;
+    projectState.currentId = keep;
+    renderProjectList(projects);
+    const project = keep ? projects.find(p => p.project_id === keep) : null;
+    document.getElementById('projectFilesPanel').style.display = project ? 'block' : 'none';
+    updateWorkspaceHeader(project);
+    if (project) renderProjectFiles(project);
+  }
+
+  async function handleUploadProjectFiles() {
+    const projectId = projectState.currentId;
+    const input = document.getElementById('projectFileInput');
+    const errorBanner = document.getElementById('projectErrorBanner');
+    const statusRow = document.getElementById('projectStatusRow');
+    const statusText = document.getElementById('projectStatusText');
+    const uploadBtn = document.getElementById('uploadProjectFilesBtn');
+    errorBanner.style.display = 'none';
+
+    if (!projectId) {
+      errorBanner.textContent = 'Create or select a project first.';
+      errorBanner.style.display = '';
+      return;
+    }
+    const files = Array.from(input.files || []);
+    if (files.length === 0) return;
+
+    const modalityMap = {};
+    for (const sel of document.querySelectorAll('[data-modality-for]')) {
+      modalityMap[sel.getAttribute('data-modality-for')] = sel.value;
+    }
+
+    statusRow.style.display = '';
+    statusText.textContent = 'Uploading ' + files.length + ' file(s)...';
+    uploadBtn.disabled = true;
+
+    try {
+      await apiUploadProjectFiles(projectId, files, modalityMap);
+      input.value = '';
+      document.getElementById('modalityPickers').innerHTML = '';
+      await refreshProjects(projectId);
+    } catch (e) {
+      errorBanner.textContent = e.message;
+      errorBanner.style.display = '';
+    } finally {
+      statusRow.style.display = 'none';
+      uploadBtn.disabled = Array.from(input.files || []).length === 0;
+    }
+  }
+
+  document.getElementById('newProjectForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('newProjectNameInput');
+    const name = input.value.trim();
+    if (!name) return;
+    const submitBtn = document.getElementById('newProjectSubmitBtn');
+    submitBtn.disabled = true;
+    try {
+      const project = await apiCreateProject(name);
+      input.value = '';
+      await refreshProjects(project.project_id);
+    } catch (e2) {
+      showSidebarError(e2.message);
+      submitBtn.disabled = false;
+    }
+  });
+  document.getElementById('newProjectNameInput').addEventListener('input', (e) => {
+    document.getElementById('newProjectSubmitBtn').disabled = !e.target.value.trim();
+  });
+
+  document.getElementById('projectFileInput').addEventListener('change', renderModalityPickers);
+  document.getElementById('uploadProjectFilesBtn').addEventListener('click', handleUploadProjectFiles);
+
+  document.getElementById('newAnalysisBtn').addEventListener('click', () => {
+    resetImagesAndQueryUI();
+    deselectProject();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.project-item')) closeAllProjectMenus();
+  });
+
+  // New analysis is the default landing state (like starting a fresh chat) --
+  // the sidebar lists existing projects, but none is auto-selected on load.
+  refreshProjects(null);
+});
+</script>
+</body>
+</html>

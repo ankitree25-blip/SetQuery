@@ -1,0 +1,11 @@
+# Secrets / local config — never commit
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Runtime-generated storage
+backend/data/
+data/

@@ -1,0 +1,47 @@
+# Reference registry config — Section 3.4's "config-driven list of
+# ModelRegistryEntry." checkpoint_path below is still a placeholder VALUE
+# for all four entries (none of these paths have a real checkpoint sitting
+# at them yet) — but for satquery-vlm-base specifically, the LOADING CODE
+# is real now (backend/model_registry/checkpoint_loading.py): drop a real
+# checkpoint at this same path (root README's "Attaching a trained
+# checkpoint later") and it loads for real, no code change needed here.
+# Grounding/change-detection/fusion don't have a training pipeline yet
+# (docs/SYSTEM_DESIGN.md's Known gaps), so their checkpoint_path stays a
+# placeholder in both senses until one exists.
+
+models:
+  - name: satquery-vlm-base
+    version: "0.1.0"
+    tasks: [SINGLE_IMAGE_VQA, CAPTIONING]
+    modalities: [OPTICAL, SAR]
+    checkpoint_path: checkpoints/vlm/satquery-vlm-base
+    quantization: "4bit"
+    requires_coregistration: false
+    max_input_px: 1024
+
+  - name: satquery-grounding
+    version: "0.1.0"
+    tasks: [GROUNDING]
+    modalities: [OPTICAL, SAR]
+    checkpoint_path: checkpoints/grounding/satquery-grounding
+    quantization: "none"
+    requires_coregistration: false
+    max_input_px: 1024
+
+  - name: satquery-change-bitemporal
+    version: "0.1.0"
+    tasks: [CHANGE_DETECTION, CHANGE_VQA]
+    modalities: [OPTICAL]
+    checkpoint_path: checkpoints/change/satquery-change-bitemporal
+    quantization: "8bit"
+    requires_coregistration: true
+    max_input_px: 1024
+
+  - name: satquery-fusion
+    version: "0.1.0"
+    tasks: [OPTICAL_SAR_FUSION]
+    modalities: [OPTICAL, SAR]
+    checkpoint_path: checkpoints/fusion/satquery-fusion
+    quantization: "8bit"
+    requires_coregistration: true
+    max_input_px: 1024
