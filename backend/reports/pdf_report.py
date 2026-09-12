@@ -30,11 +30,17 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import HRFlowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 def generate_pdf_report(
-    query: str, response, output_path: str, project_name: Optional[str] = None
+    query: str,
+    response,
+    output_path: str,
+    project_name: Optional[str] = None,
+    image_assets: Optional[list[dict]] = None,
+    change_map_path: Optional[str] = None,
+    boxes_path: Optional[str] = None,
 ) -> str:
     """Writes a PDF to output_path and returns that same path. Raises on a
     reportlab failure rather than swallowing it -- callers (api/main.py)
@@ -73,6 +79,36 @@ def generate_pdf_report(
     story.append(Spacer(1, 0.15 * inch))
 
     ev = response.evidence
+
+    assets = image_assets or []
+    if assets or change_map_path or boxes_path:
+        story.append(Paragraph("Imagery and evidence", styles["Heading2"]))
+        comparison = []
+        for asset in assets[:2]:
+            comparison.append(_comparison_cell(
+                asset.get("label", "Image"),
+                asset["path"],
+                asset.get("width"),
+                asset.get("height"),
+            ))
+        if change_map_path:
+            comparison.append(_comparison_cell("Change map", change_map_path))
+        if boxes_path:
+            comparison.append(_comparison_cell("Boxes", boxes_path))
+        if comparison:
+            story.append(Table([comparison], colWidths=[1.55 * inch] * len(comparison), hAlign="LEFT"))
+            story.append(Spacer(1, 0.12 * inch))
+        if ev.detections:
+            story.append(Paragraph("Detected boxes", styles["Heading3"]))
+            story.append(_table([
+                ["Label", "Confidence", "Box (pixels)"],
+                *[
+                    [d.label, f"{d.score:.3f}", ", ".join(f"{v:.1f}" for v in d.box_px)]
+                    for d in ev.detections
+                ],
+            ]))
+        story.append(Spacer(1, 0.1 * inch))
+
     story.append(Paragraph("Methodology", styles["Heading2"]))
     story.append(_table([
         ["Task type", _enum_val(ev.task)],
@@ -108,9 +144,9 @@ def generate_pdf_report(
     story.append(HRFlowable(width="100%", color=colors.lightgrey))
     story.append(Spacer(1, 0.1 * inch))
     story.append(Paragraph(
-        "This report covers the question, answer, confidence, methodology, key "
-        "numeric findings, and any web citations for this single analysis. It does "
-        "not yet include map overlays, charts, or cross-file/temporal synthesis.",
+        "This report includes the source imagery available to the analysis, visual "
+        "evidence, methodology, key numeric findings, and any web citations for "
+        "this single analysis.",
         small,
     ))
 
@@ -129,6 +165,29 @@ def _table(rows: list[list[str]]) -> Table:
         ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.whitesmoke),
     ]))
     return t
+
+
+def _report_image(path: str, width: int | None = None, height: int | None = None) -> Image:
+    """Fit an evidence image to the printable page while preserving detail."""
+    max_width = 6.4 * inch
+    max_height = 4.7 * inch
+    if width and height:
+        scale = min(max_width / width, max_height / height)
+        return Image(path, width=max(1, width * scale), height=max(1, height * scale))
+    return Image(path, width=max_width, height=max_height)
+
+
+def _comparison_cell(label: str, path: str, width: int | None = None, height: int | None = None) -> list:
+    """Build a compact report column for side-by-side visual comparison."""
+    image_width = 1.42 * inch
+    if width and height:
+        image_height = image_width * height / max(1, width)
+    else:
+        image_height = 1.05 * inch
+    return [
+        Paragraph(_esc(label), ParagraphStyle("comparison-label", fontSize=8, textColor=colors.grey)),
+        Image(path, width=image_width, height=min(1.15 * inch, max(0.35 * inch, image_height))),
+    ]
 
 
 def _enum_val(x) -> str:

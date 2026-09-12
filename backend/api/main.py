@@ -426,9 +426,58 @@ async def get_job_report(job_id: str):
     if record.status != "done" or record.result is None:
         raise HTTPException(409, f"job is not finished yet (status: {record.status})")
 
-    pdf_path = REPORTS_DIR / f"{job_id}.pdf"
+    pdf_path = REPORTS_DIR / f"{job_id}-visual.pdf"
     if not pdf_path.exists():
-        await asyncio.to_thread(generate_pdf_report, record.query, record.result, str(pdf_path))
+        image_assets = []
+        for image_id in record.image_ids:
+            metadata = image_store.get(image_id)
+            if metadata is None:
+                continue
+            try:
+                thumbnail = await asyncio.to_thread(_get_or_generate_thumbnail, image_id, 1400)
+            except Exception:
+                continue
+            image_assets.append({
+                "path": thumbnail,
+                "label": "Before" if not image_assets else "After",
+                "width": metadata.width,
+                "height": metadata.height,
+            })
+
+        change_map_path = None
+        change_map = record.result.evidence.change_map
+        if change_map and change_map.probability_raster_path:
+            source = Path(change_map.probability_raster_path).resolve()
+            data_root = Path(_preprocessing_config.DATA_DIR).resolve()
+            try:
+                source.relative_to(data_root)
+                if source.is_file():
+                    change_map_path = str(REPORTS_DIR / f"{job_id}-report-change-map.png")
+                    await asyncio.to_thread(_change_map_png, str(source), change_map_path, 1400)
+            except ValueError:
+                pass
+
+        boxes_path = None
+        if image_assets and record.result.evidence.detections:
+            boxes_path = str(REPORTS_DIR / f"{job_id}-report-boxes.png")
+            await asyncio.to_thread(
+                _detection_boxes_png,
+                image_assets[0]["path"],
+                boxes_path,
+                record.result.evidence.detections,
+                image_assets[0]["width"],
+                image_assets[0]["height"],
+            )
+
+        await asyncio.to_thread(
+            generate_pdf_report,
+            record.query,
+            record.result,
+            str(pdf_path),
+            image_assets=image_assets,
+            change_map_path=change_map_path,
+            boxes_path=boxes_path,
+        )
     return FileResponse(
         str(pdf_path), media_type="application/pdf",
         filename=f"satquery-report-{job_id[:8]}.pdf",
@@ -474,6 +523,26 @@ def _change_map_png(raster_path: str, output_path: str, max_dim: int = 1024) -> 
     rgba[..., 3] = np.clip(220.0 * values, 0, 220).astype("uint8")
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(rgba, mode="RGBA").save(output_path)
+    return output_path
+
+
+def _detection_boxes_png(
+    source_path: str, output_path: str, detections, source_width: int, source_height: int,
+) -> str:
+    """Draw full-image detection boxes onto the report's source thumbnail."""
+    from PIL import Image, ImageDraw
+
+    image = Image.open(source_path).convert("RGB")
+    draw = ImageDraw.Draw(image)
+    scale_x = image.width / max(1, source_width)
+    scale_y = image.height / max(1, source_height)
+    for detection in detections:
+        x0, y0, x1, y1 = detection.box_px
+        box = (x0 * scale_x, y0 * scale_y, x1 * scale_x, y1 * scale_y)
+        draw.rectangle(box, outline=(255, 138, 76), width=max(2, image.width // 300))
+        draw.text((box[0] + 3, max(0, box[1] - 14)), detection.label, fill=(255, 220, 160))
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path)
     return output_path
 
 

@@ -42,6 +42,7 @@ from agent.trace import Trace
 class JobRecord:
     job_id: str
     query: str = ""  # NEW -- so /api/jobs/{id}/report doesn't need the client to resend it
+    image_ids: list[str] = field(default_factory=list)
     status: str = "queued"  # "queued" | "running" | "done" | "failed" | "cancelled"
     progress: list[str] = field(default_factory=list)
     result: Optional[FinalResponse] = None
@@ -73,7 +74,11 @@ class JobQueue:
         execution_query: Optional[str] = None,
     ) -> str:
         job_id = str(uuid.uuid4())
-        self._jobs[job_id] = JobRecord(job_id=job_id, query=query)
+        self._jobs[job_id] = JobRecord(
+            job_id=job_id,
+            query=query,
+            image_ids=[image.image_id for image in images],
+        )
         task = asyncio.create_task(
             self._run(job_id, execution_query or query, images, web_search_enabled, mode)
         )
