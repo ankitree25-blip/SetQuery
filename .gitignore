@@ -1,11 +1,22 @@
 # Secrets / local config — never commit
 .env
+!.env.example
 
 # Python
 __pycache__/
 *.pyc
 .venv/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.vscode/
 
 # Runtime-generated storage
 backend/data/
 data/
+
+# Local model and training artifacts
+training/data/raw/
+training/data/processed/
+training/data/splits/
+training/runs/
